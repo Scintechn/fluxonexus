@@ -4,7 +4,7 @@ const LOCALES = ["pt"] as const;
 const DEFAULT_LOCALE = "pt";
 const PUBLIC_FILE = /\.[\w-]+$/;
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (
