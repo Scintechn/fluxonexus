@@ -639,7 +639,7 @@ export function BIDashboard() {
         <div className="relative border-b border-white/10 bg-[color:var(--color-brand-950)] px-4 py-4 lg:px-6">
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 bg-grid opacity-20"
+            className="pointer-events-none absolute inset-0 bg-grid opacity-10"
           />
           <div className="relative">
             <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
