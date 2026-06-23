@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Activity,
   ArrowUpRight,
@@ -12,6 +12,7 @@ import {
   PackageCheck,
   ShieldCheck,
   Timer,
+  TrendingDown,
   TrendingUp,
   Truck,
   Warehouse,
@@ -70,33 +71,169 @@ const TABS: ReadonlyArray<{ id: TabId; label: string; icon: React.ComponentType<
   { id: "qualidade", label: "Qualidade", icon: ShieldCheck },
 ];
 
-/** Mini histograma de 7 colunas (entregas no prazo por dia da semana, %) */
-const ON_TIME_TREND: ReadonlyArray<number> = [91, 93, 92, 95, 94, 97, 96];
+/* Formatação determinística (sem Intl → sem mismatch de hidratação) */
+const fmt1 = (n: number) => n.toFixed(1).replace(".", ",");
+const fmt2 = (n: number) => n.toFixed(2).replace(".", ",");
+const fmtInt = (n: number) =>
+  Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+const clampPct = (n: number, min = 40, max = 99.5) =>
+  Math.min(max, Math.max(min, n));
+const signed = (n: number, unit: string) =>
+  `${n >= 0 ? "+" : "−"}${fmt1(Math.abs(n))} ${unit}`;
 
-/** Custo por unidade expedida (€/un.) — menor é melhor */
-const COST_BY_ROUTE: ReadonlyArray<BarItem> = [
-  { label: "CD Lisboa", value: 1.28, display: "€1,28 / un.", tone: "kpi" },
-  { label: "Rota Sul", value: 1.46, display: "€1,46 / un.", tone: "accent" },
-  { label: "CD Porto", value: 1.59, display: "€1,59 / un.", tone: "accent" },
-  { label: "Rota Norte", value: 1.92, display: "€1,92 / un.", tone: "amber" },
+interface DashData {
+  onTime: number;
+  onTimeDelta: number;
+  onTimeTrend: ReadonlyArray<number>;
+  trendCaption: string;
+  costByRoute: BarItem[];
+  bestCentre: string;
+  linesPerHour: BarItem[];
+  linesAvg: number;
+  occupancy: number;
+  occPallets: number;
+  occCapacity: number;
+  poi: number;
+  poiDelta: number;
+  poiComponents: ComponentRow[];
+  quickStats: ReadonlyArray<{ k: string; v: string; d: string }>;
+}
+
+/** Perfil base de cada segmento */
+const SEG_PROFILE: Record<
+  SegmentoId,
+  { onTime: number; cost: number; lines: number; occ: number; poi: number }
+> = {
+  distribuicao: { onTime: 96.4, cost: 1.46, lines: 190, occ: 82, poi: 94.1 },
+  armazem: { onTime: 95.0, cost: 1.22, lines: 212, occ: 88, poi: 93.2 },
+  transporte: { onTime: 93.6, cost: 1.78, lines: 168, occ: 74, poi: 91.8 },
+  servico: { onTime: 97.6, cost: 1.1, lines: 154, occ: 69, poi: 95.7 },
+};
+
+/** Modulação por janela temporal — janelas mais longas são mais suaves e estáveis */
+const PER_MOD: Record<
+  PeriodoId,
+  {
+    onTime: number;
+    cost: number;
+    lines: number;
+    occ: number;
+    poi: number;
+    otDelta: number;
+    poiDelta: number;
+    caption: string;
+    exp: string;
+  }
+> = {
+  turno: { onTime: -1.4, cost: 0.18, lines: -14, occ: 3, poi: -1.1, otDelta: -1.1, poiDelta: -0.6, caption: "últimos 7 turnos", exp: "1 040" },
+  dia: { onTime: -0.6, cost: 0.09, lines: -5, occ: 1, poi: -0.5, otDelta: 0.8, poiDelta: 0.5, caption: "últimos 7 dias", exp: "3 280" },
+  semana: { onTime: 0.3, cost: -0.05, lines: 6, occ: -1, poi: 0.4, otDelta: 1.9, poiDelta: 1.1, caption: "últimas 7 semanas", exp: "9 120" },
+  mes: { onTime: 0.9, cost: -0.12, lines: 14, occ: -2, poi: 0.9, otDelta: 3.2, poiDelta: 1.7, caption: "últimos 7 meses", exp: "12 480" },
+};
+
+const ROUTES: ReadonlyArray<{ label: string; k: number }> = [
+  { label: "CD Lisboa", k: 0.88 },
+  { label: "Rota Sul", k: 1.0 },
+  { label: "CD Porto", k: 1.09 },
+  { label: "Rota Norte", k: 1.32 },
 ];
 
-/** Linhas processadas por hora, por turno */
-const LINES_PER_HOUR: ReadonlyArray<BarItem> = [
-  { label: "Turno A", value: 184, display: "184", tone: "accent" },
-  { label: "Turno B", value: 207, display: "207", tone: "kpi" },
-  { label: "Turno C", value: 162, display: "162", tone: "accent" },
+const SHIFTS: ReadonlyArray<{ label: string; k: number }> = [
+  { label: "Turno A", k: 0.97 },
+  { label: "Turno B", k: 1.09 },
+  { label: "Turno C", k: 0.85 },
 ];
 
-const POI_COMPONENTS: ReadonlyArray<ComponentRow> = [
-  { label: "Entrega no prazo", pct: 96.4, icon: Timer },
-  { label: "Pedido completo", pct: 97.8, icon: PackageCheck },
-  { label: "Sem danos", pct: 98.5, icon: ShieldCheck },
-  { label: "Documentação correta", pct: 95.1, icon: FileCheck2 },
+const TREND_WIGGLE: ReadonlyArray<number> = [-3.0, -1.2, -2.1, 0.4, -0.6, 1.8, 1.0];
+
+const POI_SPREAD: ReadonlyArray<{
+  label: string;
+  off: number;
+  icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { label: "Entrega no prazo", off: 2.3, icon: Timer },
+  { label: "Pedido completo", off: 3.7, icon: PackageCheck },
+  { label: "Sem danos", off: 4.4, icon: ShieldCheck },
+  { label: "Documentação correta", off: 1.0, icon: FileCheck2 },
 ];
 
-const OCCUPANCY = 82; // % de utilização vs capacidade
-const POI = 94.1; // Perfect Order Index %
+/** Atribui tons às barras por ranking (verde = melhor, âmbar = pior) */
+function tones(values: number[], best: "min" | "max"): BarItem["tone"][] {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  return values.map((v) => {
+    if (best === "min") return v === min ? "kpi" : v === max ? "amber" : "accent";
+    return v === max ? "kpi" : "accent";
+  });
+}
+
+/** Constrói o conjunto de indicadores para o filtro selecionado */
+function buildData(periodo: PeriodoId, segmento: SegmentoId): DashData {
+  const seg = SEG_PROFILE[segmento];
+  const per = PER_MOD[periodo];
+
+  const onTime = clampPct(seg.onTime + per.onTime);
+
+  const costVals = ROUTES.map((r) => (seg.cost + per.cost) * r.k);
+  const costTones = tones(costVals, "min");
+  const costByRoute: BarItem[] = ROUTES.map((r, i) => ({
+    label: r.label,
+    value: costVals[i],
+    display: `€${fmt2(costVals[i])} / un.`,
+    tone: costTones[i],
+  }));
+  const bestCentre = ROUTES[costVals.indexOf(Math.min(...costVals))].label;
+
+  const lineVals = SHIFTS.map((s) => Math.round((seg.lines + per.lines) * s.k));
+  const lineTones = tones(lineVals, "max");
+  const linesPerHour: BarItem[] = SHIFTS.map((s, i) => ({
+    label: s.label,
+    value: lineVals[i],
+    display: `${lineVals[i]}`,
+    tone: lineTones[i],
+  }));
+  const linesAvg = Math.round(lineVals.reduce((a, b) => a + b, 0) / lineVals.length);
+
+  const occupancy = Math.round(clampPct(seg.occ + per.occ, 40, 98));
+  const occCapacity = 22250;
+  const occPallets = Math.round((occCapacity * occupancy) / 100);
+
+  const poi = clampPct(seg.poi + per.poi);
+  const poiComponents: ComponentRow[] = POI_SPREAD.map((c) => ({
+    label: c.label,
+    pct: clampPct(poi + c.off),
+    icon: c.icon,
+  }));
+
+  const onTimeTrend = TREND_WIGGLE.map((w) => Math.round(clampPct(onTime + w)));
+
+  const otif = clampPct(onTime - 0.7);
+  const devol = Math.max(0.4, 4.8 - onTime / 25);
+  const quickStats = [
+    { k: "Expedições", v: per.exp, d: signed(per.lines / 3, "%") },
+    { k: "SLA médio", v: `${fmt1(clampPct(onTime + 1.8))}%`, d: signed(per.otDelta, "p.p.") },
+    { k: "Devoluções", v: `${fmt1(devol)}%`, d: signed(-Math.abs(per.poiDelta) - 0.2, "p.p.") },
+    { k: "OTIF", v: `${fmt1(otif)}%`, d: signed(per.poiDelta + 1.4, "p.p.") },
+  ] as const;
+
+  return {
+    onTime,
+    onTimeDelta: per.otDelta,
+    onTimeTrend,
+    trendCaption: per.caption,
+    costByRoute,
+    bestCentre,
+    linesPerHour,
+    linesAvg,
+    occupancy,
+    occPallets,
+    occCapacity,
+    poi,
+    poiDelta: per.poiDelta,
+    poiComponents,
+    quickStats,
+  };
+}
 
 const TONE_BAR: Record<BarItem["tone"], string> = {
   kpi: "bg-[color:var(--color-kpi-500)]",
@@ -124,7 +261,7 @@ function Pill({
       aria-pressed={active}
       onClick={onClick}
       className={[
-        "w-full rounded-xl px-3 py-2 text-left text-[13px] font-medium transition-all duration-200",
+        "rounded-xl px-3.5 py-2 text-[13px] font-medium transition-all duration-200",
         active
           ? "bg-[color:var(--color-accent-500)]/15 text-[color:var(--color-accent-300)] ring-1 ring-inset ring-[color:var(--color-accent-400)]/50 shadow-[0_0_18px_-6px_var(--color-accent-500)]"
           : "text-white/60 hover:bg-white/5 hover:text-white/90 ring-1 ring-inset ring-white/5",
@@ -274,8 +411,9 @@ function SemiGauge({
  * Painéis (abas)
  * ------------------------------------------------------------------------- */
 
-function DistribuicaoPanel() {
-  const maxCost = Math.max(...COST_BY_ROUTE.map((c) => c.value));
+function DistribuicaoPanel({ data }: { data: DashData }) {
+  const maxCost = Math.max(...data.costByRoute.map((c) => c.value));
+  const up = data.onTimeDelta >= 0;
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {/* KPI grande — entregas no prazo */}
@@ -283,16 +421,28 @@ function DistribuicaoPanel() {
         <div className="flex items-end justify-between gap-4">
           <div>
             <div className="font-display text-5xl font-bold leading-none tracking-tight text-white">
-              96,4<span className="text-3xl text-white/70">%</span>
+              {fmt1(data.onTime)}
+              <span className="text-3xl text-white/70">%</span>
             </div>
-            <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-[color:var(--color-kpi-500)]/15 px-2.5 py-1 text-[12px] font-semibold text-[color:var(--color-kpi-400)]">
-              <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />
-              +3,2 p.p.
+            <div
+              className={[
+                "mt-2 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-semibold",
+                up
+                  ? "bg-[color:var(--color-kpi-500)]/15 text-[color:var(--color-kpi-400)]"
+                  : "bg-amber-400/15 text-amber-300",
+              ].join(" ")}
+            >
+              {up ? (
+                <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />
+              ) : (
+                <TrendingDown className="h-3.5 w-3.5" aria-hidden="true" />
+              )}
+              {signed(data.onTimeDelta, "p.p.")}
             </div>
           </div>
           <div className="w-2/5">
-            <MiniBars data={ON_TIME_TREND} />
-            <p className="mt-1 text-right text-[10px] text-white/40">últimos 7 dias</p>
+            <MiniBars data={data.onTimeTrend} />
+            <p className="mt-1 text-right text-[10px] text-white/40">{data.trendCaption}</p>
           </div>
         </div>
         <div className="mt-5">
@@ -303,7 +453,7 @@ function DistribuicaoPanel() {
           <div className="relative h-3 overflow-hidden rounded-full bg-white/5" aria-hidden="true">
             <div
               className="h-full rounded-full bg-gradient-to-r from-[color:var(--color-kpi-600)] to-[color:var(--color-kpi-400)] glow-kpi"
-              style={{ width: "96.4%" }}
+              style={{ width: `${data.onTime}%` }}
             />
             {/* marcador da meta */}
             <span className="absolute top-0 h-full w-0.5 bg-white/50" style={{ left: "92%" }} />
@@ -314,27 +464,28 @@ function DistribuicaoPanel() {
       {/* Custo por unidade expedida */}
       <Card title="Custo por unidade expedida" icon={Boxes}>
         <ul className="space-y-3.5">
-          {COST_BY_ROUTE.map((c) => (
+          {data.costByRoute.map((c) => (
             <HBar key={c.label} item={c} max={maxCost} />
           ))}
         </ul>
         <p className="mt-4 flex items-center gap-1.5 text-[11px] text-white/45">
           <ArrowUpRight className="h-3.5 w-3.5 text-[color:var(--color-kpi-400)]" aria-hidden="true" />
-          Melhor centro: <span className="font-semibold text-[color:var(--color-kpi-400)]">CD Lisboa</span>
+          Melhor centro:{" "}
+          <span className="font-semibold text-[color:var(--color-kpi-400)]">{data.bestCentre}</span>
         </p>
       </Card>
     </div>
   );
 }
 
-function EficienciaPanel() {
-  const maxLines = Math.max(...LINES_PER_HOUR.map((l) => l.value));
+function EficienciaPanel({ data }: { data: DashData }) {
+  const maxLines = Math.max(...data.linesPerHour.map((l) => l.value));
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {/* Linhas processadas por hora — barras verticais */}
       <Card title="Linhas processadas por hora" icon={Activity}>
         <div className="flex h-44 items-end justify-around gap-4 pt-2">
-          {LINES_PER_HOUR.map((l) => {
+          {data.linesPerHour.map((l) => {
             const h = Math.round((l.value / maxLines) * 100);
             const best = l.tone === "kpi";
             return (
@@ -362,19 +513,29 @@ function EficienciaPanel() {
             );
           })}
         </div>
-        <p className="mt-3 text-[11px] text-white/45">linhas/h · média ponderada 184</p>
+        <p className="mt-3 text-[11px] text-white/45">
+          linhas/h · média ponderada {data.linesAvg}
+        </p>
       </Card>
 
       {/* Ocupação do armazém — gauge */}
       <Card title="Ocupação do armazém" icon={Warehouse}>
-        <SemiGauge value={OCCUPANCY} label="utilização vs capacidade" big={`${OCCUPANCY}%`} />
+        <SemiGauge
+          value={data.occupancy}
+          label="utilização vs capacidade"
+          big={`${data.occupancy}%`}
+        />
         <div className="mt-3 grid grid-cols-2 gap-3 text-center">
           <div className="rounded-xl bg-white/5 px-3 py-2.5">
-            <div className="font-display text-lg font-bold text-white">18 240</div>
+            <div className="font-display text-lg font-bold text-white">
+              {fmtInt(data.occPallets)}
+            </div>
             <div className="text-[10px] uppercase tracking-wide text-white/45">paletes ocupadas</div>
           </div>
           <div className="rounded-xl bg-white/5 px-3 py-2.5">
-            <div className="font-display text-lg font-bold text-[color:var(--color-kpi-400)]">22 250</div>
+            <div className="font-display text-lg font-bold text-[color:var(--color-kpi-400)]">
+              {fmtInt(data.occCapacity)}
+            </div>
             <div className="text-[10px] uppercase tracking-wide text-white/45">capacidade total</div>
           </div>
         </div>
@@ -383,22 +544,34 @@ function EficienciaPanel() {
   );
 }
 
-function QualidadePanel() {
+function QualidadePanel({ data }: { data: DashData }) {
+  const up = data.poiDelta >= 0;
   return (
     <div className="grid gap-4 md:grid-cols-[260px,1fr]">
       {/* POI gauge */}
       <Card title="Perfect Order Index" icon={BadgeCheck}>
-        <SemiGauge value={POI} label="índice POI" big={`${POI.toLocaleString("pt-PT")}%`} />
-        <div className="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-[color:var(--color-kpi-500)]/15 py-1.5 text-[12px] font-semibold text-[color:var(--color-kpi-400)]">
-          <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />
-          +1,7 p.p. face ao mês anterior
+        <SemiGauge value={data.poi} label="índice POI" big={`${fmt1(data.poi)}%`} />
+        <div
+          className={[
+            "mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-full py-1.5 text-[12px] font-semibold",
+            up
+              ? "bg-[color:var(--color-kpi-500)]/15 text-[color:var(--color-kpi-400)]"
+              : "bg-amber-400/15 text-amber-300",
+          ].join(" ")}
+        >
+          {up ? (
+            <TrendingUp className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <TrendingDown className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+          {signed(data.poiDelta, "p.p.")} face ao período anterior
         </div>
       </Card>
 
       {/* Decomposição POI */}
       <Card title="Componentes do índice" icon={FileCheck2}>
         <ul className="space-y-4">
-          {POI_COMPONENTS.map((c) => {
+          {data.poiComponents.map((c) => {
             const Icon = c.icon;
             return (
               <li key={c.label} className="space-y-1.5">
@@ -408,7 +581,7 @@ function QualidadePanel() {
                     {c.label}
                   </span>
                   <span className="font-semibold tabular-nums text-[color:var(--color-kpi-400)]">
-                    {c.pct.toLocaleString("pt-PT")}%
+                    {fmt1(c.pct)}%
                   </span>
                 </div>
                 <div className="h-2.5 overflow-hidden rounded-full bg-white/5" aria-hidden="true">
@@ -435,6 +608,8 @@ export function BIDashboard() {
   const [segmento, setSegmento] = useState<SegmentoId>("distribuicao");
   const [tab, setTab] = useState<TabId>("distribuicao");
 
+  const data = useMemo(() => buildData(periodo, segmento), [periodo, segmento]);
+
   return (
     <div className="w-full overflow-hidden rounded-3xl border border-white/10 bg-[color:var(--color-brand-950)] text-white shadow-[0_40px_120px_-40px_oklch(0.14_0.05_234/0.8)] glow-ring">
       {/* Chrome do navegador / app */}
@@ -458,37 +633,42 @@ export function BIDashboard() {
         </div>
       </div>
 
-      {/* Corpo: rail de filtros + painel */}
-      <div className="bg-grid grid gap-px bg-white/5 lg:grid-cols-[220px,1fr]">
-        {/* Rail de filtros */}
-        <aside className="space-y-5 bg-[color:var(--color-brand-950)] p-4 lg:p-5">
-          <div>
-            <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">
-              Período
-            </h3>
-            <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-1">
-              {PERIODOS.map((p) => (
-                <Pill key={p.id} active={periodo === p.id} onClick={() => setPeriodo(p.id)}>
-                  {p.label}
-                </Pill>
-              ))}
+      {/* Corpo: barra de filtros + painel */}
+      <div className="bg-[color:var(--color-brand-950)]">
+        {/* Barra de filtros — Período e Segmento lado a lado */}
+        <div className="relative border-b border-white/10 bg-[color:var(--color-brand-950)] px-4 py-4 lg:px-6">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-grid opacity-20"
+          />
+          <div className="relative">
+            <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+              <div>
+                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-white/40">
+                  Período
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {PERIODOS.map((p) => (
+                    <Pill key={p.id} active={periodo === p.id} onClick={() => setPeriodo(p.id)}>
+                      {p.label}
+                    </Pill>
+                  ))}
+                </div>
+              </div>
+              <div className="sm:border-l sm:border-white/10 sm:pl-8">
+                <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-white/40">
+                  Segmento
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {SEGMENTOS.map((s) => (
+                    <Pill key={s.id} active={segmento === s.id} onClick={() => setSegmento(s.id)}>
+                      {s.label}
+                    </Pill>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
-          <div>
-            <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-white/40">
-              Segmento
-            </h3>
-            <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-1">
-              {SEGMENTOS.map((s) => (
-                <Pill key={s.id} active={segmento === s.id} onClick={() => setSegmento(s.id)}>
-                  {s.label}
-                </Pill>
-              ))}
-            </div>
-          </div>
-
-          <div className="hidden rounded-xl border border-white/10 bg-white/[0.03] p-3 lg:block">
-            <p className="text-[11px] leading-relaxed text-white/45">
+            <p className="mt-3 text-[11px] leading-relaxed text-white/40">
               Dados de demonstração. Os indicadores acompanham o filtro{" "}
               <span className="font-semibold text-[color:var(--color-accent-300)]">
                 {SEGMENTOS.find((s) => s.id === segmento)?.label}
@@ -500,10 +680,10 @@ export function BIDashboard() {
               .
             </p>
           </div>
-        </aside>
+        </div>
 
         {/* Painel principal */}
-        <div className="bg-[color:var(--color-brand-950)] p-4 lg:p-6">
+        <div className="p-4 lg:p-6">
           {/* Abas */}
           <div
             role="tablist"
@@ -548,25 +728,29 @@ export function BIDashboard() {
             id={`bi-panel-${tab}`}
             aria-labelledby={`bi-tab-${tab}`}
             className="animate-float"
-            key={tab}
+            key={`${tab}-${periodo}-${segmento}`}
           >
-            {tab === "distribuicao" && <DistribuicaoPanel />}
-            {tab === "eficiencia" && <EficienciaPanel />}
-            {tab === "qualidade" && <QualidadePanel />}
+            {tab === "distribuicao" && <DistribuicaoPanel data={data} />}
+            {tab === "eficiencia" && <EficienciaPanel data={data} />}
+            {tab === "qualidade" && <QualidadePanel data={data} />}
           </div>
 
           {/* Rodapé de métricas rápidas */}
           <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/5 sm:grid-cols-4">
-            {[
-              { k: "Expedições", v: "12 480", d: "+5,1%" },
-              { k: "SLA médio", v: "98,2%", d: "+0,9 p.p." },
-              { k: "Devoluções", v: "1,6%", d: "−0,4 p.p." },
-              { k: "OTIF", v: "95,7%", d: "+2,3 p.p." },
-            ].map((m) => (
+            {data.quickStats.map((m) => (
               <div key={m.k} className="bg-[color:var(--color-brand-950)] px-3 py-3">
                 <div className="text-[10px] uppercase tracking-wide text-white/40">{m.k}</div>
                 <div className="mt-0.5 font-display text-lg font-bold text-white">{m.v}</div>
-                <div className="text-[11px] font-semibold text-[color:var(--color-kpi-400)]">{m.d}</div>
+                <div
+                  className={[
+                    "text-[11px] font-semibold",
+                    m.d.startsWith("−")
+                      ? "text-amber-300"
+                      : "text-[color:var(--color-kpi-400)]",
+                  ].join(" ")}
+                >
+                  {m.d}
+                </div>
               </div>
             ))}
           </div>
