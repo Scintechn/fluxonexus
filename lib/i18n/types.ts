@@ -16,12 +16,14 @@ export interface Dictionary {
     about: { title: string; description: string };
     services: { title: string; description: string };
     contact: { title: string; description: string };
+    bi: { title: string; description: string };
   };
   nav: {
     home: string;
     services: string;
     about: string;
     contact: string;
+    bi: string;
     cta: string;
     skipToContent: string;
   };
@@ -61,6 +63,28 @@ export interface Dictionary {
     items: ServiceCopy[];
     ctaTitle: string;
     ctaBody: string;
+  };
+  bi: {
+    eyebrow: string;
+    title: string;
+    subtitle: string;
+    primaryCta: string;
+    heroSupport: string;
+    dashboard: { eyebrow: string; title: string; sub: string };
+    methodologyEyebrow: string;
+    methodologyTitle: string;
+    methodologySub: string;
+    steps: { number: string; title: string; body: string }[];
+    benefitsEyebrow: string;
+    benefitsTitle: string;
+    benefits: string[];
+    useCasesEyebrow: string;
+    useCasesTitle: string;
+    useCases: string[];
+    ctaTitle: string;
+    ctaBody: string;
+    ctaButton: string;
+    ctaFooter: string;
   };
   contact: {
     eyebrow: string;

@@ -20,6 +20,12 @@
   --color-accent-500: oklch(0.70 0.170 190);
   --color-accent-600: oklch(0.60 0.165 188);
 
+  /* KPI — positive signal: neon green (Business Intelligence) */
+  --color-kpi-300: oklch(0.90 0.190 150);
+  --color-kpi-400: oklch(0.84 0.215 151);
+  --color-kpi-500: oklch(0.76 0.205 152);
+  --color-kpi-600: oklch(0.66 0.185 153);
+
   /* Neutral surfaces */
   --color-ink:     oklch(0.18 0.020 232);
   --color-muted:   oklch(0.50 0.020 232);
@@ -90,6 +96,11 @@
     box-shadow:
       0 0 0 1px color-mix(in oklch, var(--color-accent-400) 30%, transparent),
       0 10px 40px -10px color-mix(in oklch, var(--color-accent-500) 50%, transparent);
+  }
+
+  .glow-kpi {
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-kpi-400) 35%, transparent),
+      0 8px 30px -10px color-mix(in oklch, var(--color-kpi-500) 60%, transparent);
   }
 }
 

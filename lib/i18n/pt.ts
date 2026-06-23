@@ -25,6 +25,11 @@ export const pt: Dictionary = {
       description:
         "Fale com a equipa FluxoNexus em Viana do Castelo. Diagnóstico inicial gratuito para a sua operação logística.",
     },
+    bi: {
+      title: "Business Intelligence & Benchmarking — FluxoNexus",
+      description:
+        "Transforme dados brutos em vantagem competitiva. Dashboards de Business Intelligence e benchmarking logístico para reduzir custos, aumentar eficiência e elevar o nível de serviço.",
+    },
   },
 
   nav: {
@@ -32,6 +37,7 @@ export const pt: Dictionary = {
     services: "Serviços",
     about: "Sobre nós",
     contact: "Contactos",
+    bi: "BI & Benchmarking",
     cta: "Falar com a equipa",
     skipToContent: "Saltar para o conteúdo",
   },
@@ -179,6 +185,66 @@ export const pt: Dictionary = {
     ctaTitle: "Não sabe por onde começar?",
     ctaBody:
       "O diagnóstico inicial é gratuito. Em 60 minutos identificamos onde estão as maiores oportunidades de otimização da sua operação.",
+  },
+
+  bi: {
+    eyebrow: "Business Intelligence & Benchmarking",
+    title: "Transforme dados brutos em vantagem competitiva.",
+    subtitle:
+      "A FluxoNexus integra metodologias de Benchmarking e Business Intelligence para comparar a sua operação com padrões de excelência do mercado, eliminando gargalos de custo, tempo e serviço.",
+    primaryCta: "Solicitar demonstração gratuita",
+    heroSupport:
+      "Monitorizamos a sua cadeia logística em tempo real, traduzindo indicadores em decisões práticas para reduzir custos, aumentar eficiência e melhorar o nível de serviço ao cliente.",
+    dashboard: {
+      eyebrow: "Painel de demonstração",
+      title: "Dashboards personalizados para decisão logística",
+      sub: "Cada módulo transmite tecnologia, precisão e clareza — construído à medida da sua operação.",
+    },
+    methodologyEyebrow: "A nossa metodologia",
+    methodologyTitle: "De dados dispersos a decisões em três etapas",
+    methodologySub:
+      "Um percurso estruturado que liga a recolha de dados à melhoria contínua, com indicadores claros e comparáveis em cada fase.",
+    steps: [
+      {
+        number: "01",
+        title: "Diagnóstico e Coleta",
+        body: "Mapeamos os seus dados operacionais, identificamos processos críticos e comparamos a sua performance com referências de mercado e melhores práticas logísticas.",
+      },
+      {
+        number: "02",
+        title: "Integração e BI",
+        body: "Integramos dados de ERP, WMS, TMS e relatórios internos em dashboards personalizados. Identificamos desvios, gargalos e oportunidades de melhoria com base em KPIs claros e comparáveis.",
+      },
+      {
+        number: "03",
+        title: "Melhoria Contínua",
+        body: "Aplicamos o ciclo PDCA para ajustar processos, treinar equipas e acompanhar a evolução dos resultados. A cada ciclo, a operação torna-se mais eficiente, previsível e competitiva.",
+      },
+    ],
+    benefitsEyebrow: "Benefícios",
+    benefitsTitle: "O valor que entregamos",
+    benefits: [
+      "Redução de custos operacionais",
+      "Aumento de produtividade",
+      "Melhoria do nível de serviço",
+      "Decisão baseada em dados",
+      "Visão integrada da cadeia logística",
+      "Monitorização contínua de KPIs críticos",
+    ],
+    useCasesEyebrow: "Casos de uso",
+    useCasesTitle: "Aplicações práticas na sua operação",
+    useCases: [
+      "Comparação de desempenho entre armazéns, filiais ou operadores",
+      "Revisão de layout com base em tempos de picking e ocupação",
+      "Otimização de rotas com foco em custo por entrega e pontualidade",
+      "Monitorização do nível de serviço e taxa de reclamações",
+    ],
+    ctaTitle: "Deseja ver os seus dados num painel como este?",
+    ctaBody:
+      "Criamos um dashboard de demonstração com base em dados reais ou simulados da sua operação.",
+    ctaButton: "Solicitar demonstração gratuita",
+    ctaFooter:
+      "FluxoNexus — Consultoria em Logística Integrada orientada por dados, benchmarking e melhoria contínua.",
   },
 
   contact: {

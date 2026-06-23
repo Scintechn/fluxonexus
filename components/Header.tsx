@@ -26,6 +26,7 @@ export function Header({ locale, t }: { locale: string; t: Dictionary["nav"] }) 
 
   const items = [
     { href: `/${locale}/servicos`, label: t.services },
+    { href: `/${locale}/bi-benchmarking`, label: t.bi },
     { href: `/${locale}/sobre`, label: t.about },
     { href: `/${locale}/contactos`, label: t.contact },
   ];

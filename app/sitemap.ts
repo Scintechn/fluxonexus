@@ -3,7 +3,7 @@ import { business } from "@/lib/business";
 import { locales } from "@/lib/i18n";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const paths = ["", "/servicos", "/sobre", "/contactos"];
+  const paths = ["", "/servicos", "/bi-benchmarking", "/sobre", "/contactos"];
   const now = new Date();
   return locales.flatMap((locale) =>
     paths.map((path) => ({
